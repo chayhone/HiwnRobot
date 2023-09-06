@@ -1,0 +1,2521 @@
+;====Start Speed====
+SET_OVERRIDE_SPEED 28
+
+;==========InitialSetting_Frame==========
+SET_TOOL 1
+SET_BASE 1
+
+;====INT====
+INT HANDLE, NUM
+
+;====AutoSpeedUp====
+INT intCmdCount = 1
+BOOL isExecute = FALSE
+
+;====E6POINT====
+E6POINT E6CurrentPos, E6TargetPos, E6RelayPos, E6MovePos 
+
+;====REAL====
+REAL var1_data, var2_data, var3_data, var4_data, var5_data, var6_data, var7_data, var8_data, var9_data
+REAL var1_Cmd, var2_FromStage,var2_GripperGetOk,var3_ToStage, var4_Type
+REAL var1_Cmd_Temp, var2_FromStage_Temp,var2_GripperGetOk_Temp,var3_ToStage_Temp, var4_Type_Temp
+
+;====BOOL====
+BOOL isCmdErr, isCheckPortErr,  isGripperAlarm, isTemperatureNow
+;BOOL isRobotInStandby
+
+;====TestMode 正常情況都是0====
+INT intCmdTestMode = 0 ;手動測試取放
+INT intS1_GetPlaceTestMode = 0 ;S1自動取放測試
+INT intComHotRunTestMode = 0
+
+;====Command測試參數====
+INT intCmdTestCount = 1
+INT intCmdTestCountMax = 4
+
+;====入料站測試參數====
+INT intS1TestCount = 0
+INT intS1TestCountMin = 1
+INT intS1TestCountMax = 12
+
+;====ByPassMode====
+;=不夾取=
+INT intGipperByPass = 0
+;=不判斷氣壓=
+INT intGetPressureByPass = 0
+;=不判夾取SENSOR=
+INT intGetSensorCheckByPass = 0
+;=不自動加速=
+INT intAutoSpeedUpByPass = 0
+
+;====PortStatus====
+INT intPS_S1_1=1
+INT intPS_S1_2=0
+INT intPS_S1_3=1
+INT intPS_S1_4=0
+INT intPS_S1_5=1
+INT intPS_S1_6=0
+INT intPS_S1_7=0
+INT intPS_S1_8=0
+INT intPS_S1_9=0
+INT intPS_S1_10=0
+INT intPS_S1_11=0
+INT intPS_S1_12=0
+INT intPS_S2_1=0
+INT intPS_S3_1=0
+INT intPS_S3_2=0
+INT intPS_S3_3=0
+INT intPS_S4_1=0
+INT intPS_S4_2=0
+
+;====Struc====
+STRUC CommandTest REAL Cmd, REAL FromStage, REAL ToStage, REAL Type 
+DECL CommandTest TestCmd 
+;CommandTest TestCmd = {Commad 101,FromStage 1,ToStage 1,Type 1}
+
+;==========InitialSetting_I/O and Value==========
+isTemperatureNow = FALSE
+$RO[1] = TRUE
+CounterReset()
+Robot_Move_Off()
+
+;==========CheckRobotInStandby==========
+IF Check_Robot_POS_C1() == FALSE THEN
+    WAIT SEC 0.5
+    USER_ALARM[1]
+    ;LIN P101 FINE Vel=400mm/s Acc=100% TOOL[1] BASE[1]
+ELSE    
+    GoHome()
+ENDIF
+
+;==========CheckGripperRelease==========
+IF Check_Gripper_Not_Get() == FALSE THEN
+    WAIT SEC 0.5
+    USER_ALARM[4]
+ELSE  
+ENDIF
+
+;==========Socket Connect==========
+WAIT SEC 0
+COPEN(ETH,HANDLE)
+WAIT SEC 0
+CCLEAR(HANDLE)
+WAIT SEC 0
+;CWRITE(HANDLE, 666,1234);Log
+
+;==========Command Test Loop==========
+LOOP
+    IF intCmdTestMode == 1 THEN
+        $T[7] = 0
+        WAIT SEC 0
+        $T_STOP[7] = FALSE 
+        $C[3]  = intCmdTestCount
+        WAIT SEC 0
+
+        ;====Command(Path,FromStage,ToStage,Type) ===
+        ;====Cmd 101 > S1toS2
+        ;====Cmd 105 > S2toS3
+        ;====Cmd 107 > S3toS4
+        ;====Cmd 109 > S4toS1
+        ;====Cmd 201 > HomeToS3_Temperature
+        ;====Cmd 203 > S3_TemperatureToHome
+        ;====Cmd 301 > GetOk
+        ;====Cmd 501 > IsHome
+
+        ;====Product Type====
+        ;====TMRW43 > 1   down 11
+        ;====TMRW45 > 2    down 15
+        ;====TMRW47 > 3
+        ;====TMRW47C >  4
+        ;====TMRW4A > 5
+        ;====TMRW4F > 6 down 16
+
+        SWITCH intCmdTestCount
+        CASE 1
+            ;TestCmd = {REAL Cmd 101,REAL FromStage 1,REAL ToStage 1,REAL Type 1}
+            ;            TestCmd = {Cmd 101,FromStage 1,ToStage 1,Type 1}
+            var1_Cmd = 107
+            var2_FromStage = 3
+            var3_ToStage  = 2
+            var4_Type = 6
+        CASE 2
+            WAIT SEC 1.5
+            ;     TestCmd = {Cmd 101,FromStage 1,ToStage 1,Type 1}
+            var1_Cmd = 109
+            var2_FromStage = 2
+            var3_ToStage = 3
+            var4_Type = 6
+        CASE 3
+            WAIT SEC 1.5
+            var1_Cmd = 201
+            var2_FromStage =2
+            var3_ToStage =1
+            var4_Type = 1   
+        CASE 4
+            WAIT SEC 1.5
+            var1_Cmd = 203
+            var2_FromStage =2
+            var3_ToStage =1
+            var4_Type = 1
+        CASE 5
+            WAIT SEC 1
+            var1_Cmd = 101
+            var2_FromStage =1
+            var3_ToStage =1
+            var4_Type =1        
+        CASE 6        
+            WAIT SEC 1
+            var1_Cmd = 101
+            var2_FromStage =1
+            var3_ToStage =1
+            var4_Type =1        
+        DEFAULT
+            EXIT
+        ENDSWITCH     	       
+
+        ;==========RobotMove========== 
+        SWITCH var1_Cmd
+        CASE 101
+            S1_to_S2()
+        CASE 105
+            S2_to_S3()
+        CASE 107
+            S3_to_S4()
+        CASE 109
+            S4_to_S1()
+        CASE 201
+            Home_to_S3_Temperature()
+        CASE 203  
+            S3_Temperature_to_Home()	  
+        CASE 501      
+            CheckPosInHome()
+        DEFAULT
+            isCmdErr = TRUE
+        ENDSWITCH       	  	  
+
+        IF intCmdTestCount < intCmdTestCountMax  THEN            
+            intCmdTestCount = intCmdTestCount +1
+        ELSE
+            ;            intCmdTestCount = 1
+            WAIT SEC 0.5
+            USER_ALARM[5]
+            ;EXIT
+        ENDIF	           
+
+        WAIT SEC 0
+        $T_STOP[7] = TRUE
+    ELSE
+        EXIT
+    ENDIF 	
+ENDLOOP
+
+;==========S1 GetPlace Test Loop==========
+INT S1AutoTestMode = 1
+;===AutoTestMode關閉FromTo才有作用
+var4_Type = 2
+
+var2_FromStage = 12
+var3_ToStage = 10
+
+intS1TestCount = intS1TestCountMin
+
+LOOP
+    IF intS1_GetPlaceTestMode == 1 THEN
+        $T[7] = 0
+        WAIT SEC 0
+        $T_STOP[7] = FALSE 
+        $C[3]  = intS1TestCount
+        WAIT SEC 0    
+
+        IF S1AutoTestMode  == 1 THEN
+            var2_FromStage = intS1TestCount
+            IF intS1TestCount  >=  intS1TestCountMax THEN
+                var3_ToStage = intS1TestCountMin
+                intS1TestCount = intS1TestCountMin
+            ELSE
+                var3_ToStage  = intS1TestCount +1
+                intS1TestCount = intS1TestCount + 1
+            ENDIF
+        ENDIF
+
+        ;==========RobotMove========== 
+        IF isCmdErr == FALSE AND isGripperAlarm == FALSE THEN
+            RobotMove_S1_Get()
+        ENDIF
+        IF isCmdErr == FALSE AND isGripperAlarm == FALSE THEN
+            RobotMove_S1_Place()
+        ENDIF
+
+        WAIT SEC 0
+        $T_STOP[7] = TRUE
+    ELSE
+        EXIT
+    ENDIF 
+ENDLOOP
+
+;==========Test Mode Check==========
+IF intCmdTestMode == 1 OR intS1_GetPlaceTestMode==1 THEN
+    WAIT SEC 0.5
+    USER_ALARM[5]
+ENDIF 
+
+
+;==========Command Hot Run==========
+LOOP
+    IF intComHotRunTestMode == 1 THEN
+        $C[2]  = HANDLE
+        IF HANDLE> -1 THEN
+            AlarmReset()    
+            CommandReset()
+
+            IF GetCommand()==TRUE THEN            
+                IF Check_Command() == FALSE THEN
+                    WAIT SEC 0.5
+                    USER_ALARM[6]
+                ENDIF 
+                WAIT SEC 0.5
+                SWITCH var1_Cmd
+                CASE 101
+                    IF S1_Check(var2_FromStage) == FALSE THEN
+                        isCheckPortErr =TRUE
+                    ENDIF
+                    IF S2_Check(var3_ToStage) == TRUE THEN
+                        isCheckPortErr =TRUE
+                    ENDIF
+                    IF isCheckPortErr == FALSE THEN
+                        S1_Set(var2_FromStage,FALSE)
+                        S2_Set(var2_FromStage,TRUE)
+                        WAIT SEC 0
+                        CWRITE(HANDLE, 102,2)
+                    ELSE
+                        WAIT SEC 0
+                        CWRITE(HANDLE, 102,9)                        
+                    ENDIF
+                CASE 105
+                    IF S2_Check(var2_FromStage) == FALSE THEN
+                        isCheckPortErr =TRUE
+                    ENDIF
+                    IF S3_Check(var3_ToStage) == TRUE THEN
+                        isCheckPortErr =TRUE
+                    ENDIF
+                    IF isCheckPortErr == FALSE THEN
+                        S2_Set(var2_FromStage,FALSE)
+                        S3_Set(var2_FromStage,TRUE)
+                        WAIT SEC 0
+                        CWRITE(HANDLE, 106,2)
+                    ELSE
+                        WAIT SEC 0
+                        CWRITE(HANDLE, 106,9)                        
+                    ENDIF
+                CASE 107
+                    IF S3_Check(var2_FromStage) == FALSE THEN
+                        isCheckPortErr =TRUE
+                    ENDIF
+                    IF S4_Check(var3_ToStage) == TRUE THEN
+                        isCheckPortErr =TRUE
+                    ENDIF
+                    IF isCheckPortErr == FALSE THEN
+                        S3_Set(var2_FromStage,FALSE)
+                        S4_Set(var2_FromStage,TRUE)
+                        WAIT SEC 0
+                        CWRITE(HANDLE, 108,2)
+                    ELSE
+                        WAIT SEC 0
+                        CWRITE(HANDLE, 108,9)                        
+                    ENDIF
+                CASE 109
+                    IF S4_Check(var2_FromStage) == FALSE THEN
+                        isCheckPortErr =TRUE
+                    ENDIF
+                    IF S1_Check(var3_ToStage) == TRUE THEN
+                        isCheckPortErr =TRUE
+                    ENDIF
+                    IF isCheckPortErr == FALSE THEN
+                        S4_Set(var2_FromStage,FALSE)
+                        S1_Set(var2_FromStage,TRUE)
+                        WAIT SEC 0
+                        CWRITE(HANDLE, 110,2)
+                    ELSE
+                        WAIT SEC 0
+                        CWRITE(HANDLE, 110,9)                        
+                    ENDIF
+                CASE 201       
+                    IF S3_Check(var2_FromStage) == FALSE THEN
+                        isCheckPortErr =TRUE
+                    ENDIF                 
+                    IF isCheckPortErr == FALSE THEN
+                        WAIT SEC 0
+                        CWRITE(HANDLE, 202,2)
+                    ELSE
+                        WAIT SEC 0
+                        CWRITE(HANDLE, 202,9)                        
+                    ENDIF
+                CASE 203       
+
+                CASE 501    
+                    CheckPosInHome()
+                DEFAULT
+                    WAIT SEC 0
+                    isCmdErr = TRUE
+                ENDSWITCH     		
+                
+                ;====錯誤的部分送代碼====
+                IF isCmdErr == TRUE THEN
+                    $C[4]  = 9
+                    ;CWRITE(HANDLE, 999,9)
+                    WAIT SEC 0.5
+                    USER_ALARM[2]
+                ELSE
+                    IF isGripperAlarm == TRUE THEN
+                        ;CWRITE(HANDLE, 999,9)
+                        WAIT SEC 0.5
+                        USER_ALARM[3]
+                    ELSE
+                        IF isCheckPortErr == TRUE THEN                            
+                            WAIT SEC 0.5
+                            ;USER_ALARM[7];看要用哪一個錯誤
+                        ENDIF
+                    ENDIF
+                ENDIF
+                ;====錯誤的部分送代碼END====	
+                
+            ENDIF  
+        ENDIF  
+    ELSE
+        EXIT
+    ENDIF 
+
+ENDLOOP
+
+;==========Main Loop==========
+LOOP
+    $C[2]  = HANDLE
+    IF HANDLE> -1 THEN
+        AlarmReset()    
+        CommandReset()
+
+        IF GetCommand()==TRUE THEN            
+            IF Check_Command() == FALSE THEN
+                WAIT SEC 0.5
+                USER_ALARM[6]
+            ENDIF 		
+
+            SWITCH var1_Cmd
+            CASE 101
+                S1_to_S2()
+            CASE 105
+                S2_to_S3()
+            CASE 107
+                S3_to_S4()
+            CASE 109
+                S4_to_S1()
+            CASE 201       
+                Home_to_S3_Temperature()       
+            CASE 203     
+                S3_Temperature_to_Home()
+            CASE 501    
+                CheckPosInHome()
+            DEFAULT
+                WAIT SEC 0
+                isCmdErr = TRUE
+            ENDSWITCH     		
+
+            AutoSpeedUp()   
+
+            ;====錯誤的部分送代碼====
+            IF isCmdErr == TRUE THEN
+                $C[4]  = 9
+                ;CWRITE(HANDLE, 999,9)
+                WAIT SEC 0.5
+                USER_ALARM[2]
+            ELSE
+                IF isGripperAlarm == TRUE THEN
+                    ;CWRITE(HANDLE, 999,9)
+                    WAIT SEC 0.5
+                    USER_ALARM[3]
+                ENDIF
+                ;====錯誤的部分送代碼END====	
+            ENDIF
+        ENDIF  
+    ENDIF  
+ENDLOOP
+
+;=========GetCommand=======
+DEFFCT BOOL GetCommand()
+    ;====Command(Path,FromStage,ToStage,Type) ===
+    ;====Cmd 101 > S1toS2
+    ;====Cmd 105 > S2toS3
+    ;====Cmd 107 > S3toS4
+    ;====Cmd 109 > S4toS1
+    ;====Cmd 201 > HomeToS3_Temperature
+    ;====Cmd 203 > S3_TemperatureToHome
+    ;====Cmd 301 > GetOk
+    ;====Cmd 501 > IsHome
+
+    WAIT SEC 0
+    CINQUIRE(HANDLE,NUM)
+    $C[7] = NUM
+    IF NUM > 0 THEN
+        CREAD(HANDLE, var1_data, var2_data, var3_data, var4_data, var5_data, var6_data, var7_data, var8_data) 
+        IF var1_data == 302 THEN
+            var2_GripperGetOk = var2_data
+        ELSE        
+            var1_Cmd = var1_data
+            var2_FromStage = var2_data
+            var3_ToStage = var3_data
+            var4_Type = var4_data
+        ENDIF        
+        CCLEAR(HANDLE)      
+        RETURN TRUE
+    ELSE       
+        WAIT SEC 0.5
+        RETURN FALSE     
+    ENDIF
+    WAIT SEC 0
+    RETURN FALSE
+ENDFCT
+
+;=========ValueReset=========
+DEF AlarmReset()
+    isCmdErr = FALSE   
+    isCheckPortErr =FALSE   
+    isGripperAlarm = FALSE
+END
+
+;=========101=========
+DEF S1_to_S2()  
+    Robot_Move_ON()
+    $T[1] = 0 
+    WAIT SEC 0 
+    $T_STOP[1] = FALSE
+    ;CWRITE(HANDLE, 102,1) 
+
+    IF Check_Gripper_Not_Get() == FALSE THEN
+        isGripperAlarm  = true
+    ENDIF
+
+    IF isCmdErr == FALSE AND isGripperAlarm == FALSE THEN
+        RobotMove_S1_Get()
+    ENDIF
+
+    IF isCmdErr == FALSE AND isGripperAlarm == FALSE THEN
+        RobotMove_S2_Place()
+    ENDIF
+
+    IF isCmdErr == TRUE THEN
+        WAIT SEC 0
+        CWRITE(HANDLE, 102,9)
+        WAIT SEC 0.5
+        USER_ALARM[2]
+    ELSE
+        IF isGripperAlarm == TRUE THEN
+            WAIT SEC 0
+            CWRITE(HANDLE, 102,9)
+            WAIT SEC 0.5
+            USER_ALARM[3]
+        ELSE
+            WAIT SEC 0
+            CWRITE(HANDLE, 102,2)
+        ENDIF
+    ENDIF
+
+    WAIT SEC 0
+    $T_STOP[1] = TRUE    
+    Robot_Move_Off()
+END
+
+;=========105=========
+DEF S2_to_S3()
+    Robot_Move_ON()
+    $T[2] = 0 
+    WAIT SEC 0 
+    $T_STOP[2] = FALSE
+    ;CWRITE(HANDLE, 106,1) 
+
+    IF Check_Gripper_Not_Get() == FALSE THEN
+        isGripperAlarm  = true
+    ENDIF
+
+    IF isCmdErr == FALSE AND isGripperAlarm == FALSE THEN
+        RobotMove_S2_Get()
+    ENDIF
+
+    IF isCmdErr == FALSE AND isGripperAlarm == FALSE THEN
+        RobotMove_S3_Place()
+    ENDIF
+
+    IF isCmdErr == TRUE THEN
+        WAIT SEC 0
+        CWRITE(HANDLE, 106,9)
+        WAIT SEC 0.5
+        USER_ALARM[2]
+    ELSE
+        IF isGripperAlarm == TRUE THEN
+            WAIT SEC 0
+            CWRITE(HANDLE, 106,9)
+            WAIT SEC 0.5
+            USER_ALARM[3]
+        ELSE
+            WAIT SEC 0
+            CWRITE(HANDLE, 106,2)
+        ENDIF
+    ENDIF
+
+    WAIT SEC 0
+    $T_STOP[2] = TRUE
+    Robot_Move_Off()
+END
+
+;=========107=========
+DEF S3_to_S4()
+    Robot_Move_ON()
+    $T[3] = 0 
+    WAIT SEC 0 
+    $T_STOP[3] = FALSE
+    ;CWRITE(HANDLE, 108,1) 
+
+    IF Check_Gripper_Not_Get() == FALSE THEN
+        isGripperAlarm  = true
+    ENDIF
+
+    IF isCmdErr == FALSE AND isGripperAlarm == FALSE THEN
+        RobotMove_S3_Get()
+    ENDIF
+
+    IF isCmdErr == FALSE AND isGripperAlarm == FALSE THEN
+        RobotMove_S4_Place()
+    ENDIF
+
+    IF isCmdErr == TRUE THEN
+        WAIT SEC 0
+        CWRITE(HANDLE, 108,9)
+        WAIT SEC 0.5
+        USER_ALARM[2]
+    ELSE
+        IF isGripperAlarm == TRUE THEN
+            WAIT SEC 0
+            CWRITE(HANDLE, 108,9)
+            WAIT SEC 0.5
+            USER_ALARM[3]
+        ELSE
+            WAIT SEC 0
+            CWRITE(HANDLE, 108,2)
+        ENDIF
+    ENDIF
+
+    WAIT SEC 0
+    $T_STOP[3] = TRUE
+    Robot_Move_Off()
+END
+
+;=========109=========
+DEF S4_to_S1()
+    Robot_Move_ON()
+    $T[4] = 0 
+    WAIT SEC 0 
+    $T_STOP[4] = FALSE
+    ;CWRITE(HANDLE, 110,1) 
+
+    IF Check_Gripper_Not_Get() == FALSE THEN
+        isGripperAlarm  = true
+    ENDIF
+
+    IF isCmdErr == FALSE AND isGripperAlarm == FALSE THEN
+        RobotMove_S4_Get()
+    ENDIF
+
+    IF isCmdErr == FALSE AND isGripperAlarm == FALSE THEN
+        RobotMove_S1_Place()
+    ENDIF
+
+    IF isCmdErr == TRUE THEN
+        WAIT SEC 0
+        CWRITE(HANDLE, 110,9)
+        WAIT SEC 0.5
+        USER_ALARM[2]
+    ELSE
+        IF isGripperAlarm == TRUE THEN
+            WAIT SEC 0
+            CWRITE(HANDLE, 110,9)
+            WAIT SEC 0.5
+            USER_ALARM[3]
+        ELSE
+            WAIT SEC 0
+            CWRITE(HANDLE, 110,2)
+        ENDIF
+    ENDIF
+
+    WAIT SEC 0
+    $T_STOP[4] = TRUE
+    Robot_Move_Off()
+END
+
+;=========201=========
+DEF Home_to_S3_Temperature()
+    Robot_Move_ON()
+    $T[5] = 0 
+    WAIT SEC 0 
+    $T_STOP[5] = FALSE
+    ; CWRITE(HANDLE, 202,1) 
+
+    IF Check_Gripper_Not_Get() == FALSE THEN
+        isGripperAlarm  = true
+    ENDIF
+
+    IF isCmdErr == FALSE AND isGripperAlarm == FALSE THEN
+        RobotMove_S3_Temperature_Go()
+    ENDIF
+
+    IF isCmdErr == TRUE THEN
+        WAIT SEC 0
+        CWRITE(HANDLE, 202,9)
+        WAIT SEC 0.5
+        USER_ALARM[2]
+    ELSE
+        IF isGripperAlarm == TRUE THEN
+            WAIT SEC 0
+            CWRITE(HANDLE, 202,9)
+            WAIT SEC 0.5
+            USER_ALARM[3]
+        ELSE
+            WAIT SEC 0
+            CWRITE(HANDLE, 202,2)
+        ENDIF
+    ENDIF
+
+    WAIT SEC 0
+    $T_STOP[5] = TRUE
+    ;改成不關閉移動訊號
+    ;Robot_Move_Off()
+END
+
+;=========203=========
+DEF S3_Temperature_to_Home()
+    Robot_Move_ON()
+    $T[6] = 0 
+    WAIT SEC 0 
+    $T_STOP[6] = FALSE
+    ; CWRITE(HANDLE, 204,1) 
+
+    IF Check_Gripper_Not_Get() == FALSE THEN
+        isGripperAlarm  = true
+    ENDIF
+
+    IF isCmdErr == FALSE AND isGripperAlarm == FALSE THEN
+        RobotMove_S3_Temperature_Back()
+    ENDIF
+
+    IF isCmdErr == TRUE THEN
+        WAIT SEC 0
+        CWRITE(HANDLE, 204,9)
+        WAIT SEC 0.5
+        USER_ALARM[2]
+    ELSE
+        IF isGripperAlarm == TRUE THEN
+            WAIT SEC 0
+            CWRITE(HANDLE, 204,9)
+            WAIT SEC 0.5
+            USER_ALARM[3]
+        ELSE
+            WAIT SEC 0
+            CWRITE(HANDLE, 204,2)
+        ENDIF
+    ENDIF
+
+    WAIT SEC 0
+    $T_STOP[6] = TRUE
+    Robot_Move_Off()
+END
+
+;=========501=========
+DEF CheckPosInHome()
+    WAIT SEC 0 
+    IF Check_Robot_POS_C1()== TRUE THEN
+        WAIT SEC 0.5
+        CWRITE(HANDLE, 502,2)
+    ELSE    
+        WAIT SEC 0.5
+        CWRITE(HANDLE, 502,9)
+    ENDIF
+END
+
+;=========S1_Get=========
+DEF RobotMove_S1_Get()
+    WAIT SEC 0
+    SWITCH var2_FromStage 
+    CASE 1
+        E6RelayPos  = P113
+        SWITCH   var4_Type 
+        CASE 1
+            E6TargetPos = P201
+        CASE 2
+            E6TargetPos = P221
+        CASE 3
+            E6TargetPos = P241
+        CASE 4
+            E6TargetPos = P261
+        CASE 5
+            E6TargetPos = P281
+        CASE 6        
+            E6TargetPos = P301
+        DEFAULT
+            isCmdErr = TRUE
+        ENDSWITCH     
+    CASE 2
+        E6RelayPos  = P113
+        SWITCH   var4_Type 
+        CASE 1
+            E6TargetPos = P202
+        CASE 2
+            E6TargetPos = P222
+        CASE 3
+            E6TargetPos = P242
+        CASE 4
+            E6TargetPos = P262
+        CASE 5
+            E6TargetPos = P282
+        CASE 6        
+            E6TargetPos = P302
+        DEFAULT
+            isCmdErr = TRUE
+        ENDSWITCH     
+    CASE 3
+        E6RelayPos  = P113
+        SWITCH   var4_Type 
+        CASE 1
+            E6TargetPos = P203
+        CASE 2
+            E6TargetPos = P223
+        CASE 3
+            E6TargetPos = P243
+        CASE 4
+            E6TargetPos = P263
+        CASE 5
+            E6TargetPos = P283
+        CASE 6        
+            E6TargetPos = P303
+        DEFAULT
+            isCmdErr = TRUE
+        ENDSWITCH     
+    CASE 4
+        E6RelayPos  = P113
+        SWITCH   var4_Type 
+        CASE 1
+            E6TargetPos = P204
+        CASE 2
+            E6TargetPos = P224
+        CASE 3
+            E6TargetPos = P244
+        CASE 4
+            E6TargetPos = P264
+        CASE 5
+            E6TargetPos = P284
+        CASE 6        
+            E6TargetPos = P304
+        DEFAULT
+            isCmdErr = TRUE
+        ENDSWITCH     
+    CASE 5        
+        E6RelayPos  = P114
+        SWITCH   var4_Type 
+        CASE 1
+            E6TargetPos = P205
+        CASE 2
+            E6TargetPos = P225
+        CASE 3
+            E6TargetPos = P245
+        CASE 4
+            E6TargetPos = P265
+        CASE 5
+            E6TargetPos = P285
+        CASE 6        
+            E6TargetPos = P305
+        DEFAULT
+            isCmdErr = TRUE
+        ENDSWITCH     
+    CASE 6     
+        E6RelayPos  = P114   
+        SWITCH   var4_Type 
+        CASE 1
+            E6TargetPos = P206
+        CASE 2
+            E6TargetPos = P226
+        CASE 3
+            E6TargetPos = P246
+        CASE 4
+            E6TargetPos = P266
+        CASE 5
+            E6TargetPos = P286
+        CASE 6        
+            E6TargetPos = P306
+        DEFAULT
+            isCmdErr = TRUE
+        ENDSWITCH     
+    CASE 7
+        E6RelayPos  = P114   
+        SWITCH   var4_Type 
+        CASE 1
+            E6TargetPos = P207
+        CASE 2
+            E6TargetPos = P227
+        CASE 3
+            E6TargetPos = P247
+        CASE 4
+            E6TargetPos = P267
+        CASE 5
+            E6TargetPos = P287
+        CASE 6        
+            E6TargetPos = P307
+        DEFAULT
+            isCmdErr = TRUE
+        ENDSWITCH     
+    CASE 8
+        E6RelayPos  = P114   
+        SWITCH   var4_Type 
+        CASE 1
+            E6TargetPos = P208
+        CASE 2
+            E6TargetPos = P228
+        CASE 3
+            E6TargetPos = P248
+        CASE 4
+            E6TargetPos = P268
+        CASE 5
+            E6TargetPos = P288
+        CASE 6        
+            E6TargetPos = P308
+        DEFAULT
+            isCmdErr = TRUE
+        ENDSWITCH     
+    CASE 9
+        E6RelayPos  = P115
+        SWITCH   var4_Type 
+        CASE 1
+            E6TargetPos = P209
+        CASE 2
+            E6TargetPos = P229
+        CASE 3
+            E6TargetPos = P249
+        CASE 4
+            E6TargetPos = P269
+        CASE 5
+            E6TargetPos = P289
+        CASE 6    
+            E6TargetPos = P309
+        DEFAULT
+            isCmdErr = TRUE
+        ENDSWITCH     
+    CASE 10
+        E6RelayPos  = P115
+        SWITCH   var4_Type 
+        CASE 1
+            E6TargetPos = P210
+        CASE 2
+            E6TargetPos = P230
+        CASE 3
+            E6TargetPos = P250
+        CASE 4
+            E6TargetPos = P270
+        CASE 5
+            E6TargetPos = P290
+        CASE 6        
+            E6TargetPos = P310
+        DEFAULT
+            isCmdErr = TRUE
+        ENDSWITCH     
+    CASE 11
+        E6RelayPos  = P115
+        SWITCH   var4_Type 
+        CASE 1
+            E6TargetPos = P211
+        CASE 2
+            E6TargetPos = P231
+        CASE 3
+            E6TargetPos = P251
+        CASE 4
+            E6TargetPos = P271
+        CASE 5
+            E6TargetPos = P291
+        CASE 6        
+            E6TargetPos = P311
+        DEFAULT
+            isCmdErr = TRUE
+        ENDSWITCH     
+    CASE 12     
+        E6RelayPos  = P115
+        SWITCH   var4_Type 
+        CASE 1
+            E6TargetPos = P212
+        CASE 2
+            E6TargetPos = P232
+        CASE 3
+            E6TargetPos = P252
+        CASE 4
+            E6TargetPos = P272
+        CASE 5
+            E6TargetPos = P292
+        CASE 6        
+            E6TargetPos = P312
+        DEFAULT
+            isCmdErr = TRUE
+        ENDSWITCH     
+    DEFAULT
+        isCmdErr = TRUE
+    ENDSWITCH     
+
+    ;=========Start Move S1 Get=========
+    IF isCmdErr == FALSE THEN
+        PTP P101 CONT Vel=20% Acc=100% TOOL[1] BASE[1]
+        LIN P111 CONT Vel=600mm/s Acc=100% TOOL[1] BASE[1]
+        E6MovePos = E6RelayPos
+        LIN E6MovePos CONT Vel=600mm/s Acc=100% TOOL[1] BASE[1]
+        E6MovePos = E6TargetPos
+        E6MovePos.X = E6MovePos.X + 10
+        E6MovePos.Z = E6MovePos.Z + 45
+        LIN E6MovePos CONT Vel=400mm/s Acc=100% TOOL[1] BASE[1]
+        LIN_REL {X -10, Z -15} CONT Vel=200mm/s Acc=100%
+        LIN_REL {Z -30} FINE Vel=25mm/s Acc=100%
+        Gripper_Get()        
+
+        IF isGripperAlarm == FALSE THEN
+            ;  ====Tool Move====
+            LIN_REL_TOOL {Z -10} CONT Vel=50mm/s Acc=100% 
+            LIN_REL_TOOL {Z -20} CONT Vel=200mm/s Acc=100% 
+
+            ;  ====Base Move====
+            LIN_REL {X 30, Y 0, Z 50} CONT Vel=600mm/s Acc=100%
+
+            E6MovePos = E6RelayPos
+            LIN E6MovePos CONT Vel=600mm/s Acc=100% TOOL[1] BASE[1]
+            LIN P111 CONT Vel=600mm/s Acc=100% TOOL[1] BASE[1]
+            ;        LIN P101 CONT Vel=600mm/s Acc=100% TOOL[1] BASE[1]
+        ENDIF
+    ENDIF    
+END
+
+;=========S1_Place=========
+DEF RobotMove_S1_Place()
+    WAIT SEC 0
+    SWITCH   var3_ToStage 
+    CASE 1
+        E6RelayPos  = P113
+        SWITCH   var4_Type 
+        CASE 1
+            E6TargetPos = P201
+        CASE 2
+            E6TargetPos = P221
+        CASE 3
+            E6TargetPos = P241
+        CASE 4
+            E6TargetPos = P261
+        CASE 5
+            E6TargetPos = P281
+        CASE 6        
+            E6TargetPos = P301
+        DEFAULT
+            isCmdErr = TRUE
+        ENDSWITCH     
+    CASE 2
+        E6RelayPos  = P113
+        SWITCH   var4_Type 
+        CASE 1
+            E6TargetPos = P202
+        CASE 2
+            E6TargetPos = P222
+        CASE 3
+            E6TargetPos = P242
+        CASE 4
+            E6TargetPos = P262
+        CASE 5
+            E6TargetPos = P282
+        CASE 6        
+            E6TargetPos = P302
+        DEFAULT
+            isCmdErr = TRUE
+        ENDSWITCH     
+    CASE 3
+        E6RelayPos  = P113
+        SWITCH   var4_Type 
+        CASE 1
+            E6TargetPos = P203
+        CASE 2
+            E6TargetPos = P223
+        CASE 3
+            E6TargetPos = P243
+        CASE 4
+            E6TargetPos = P263
+        CASE 5
+            E6TargetPos = P283
+        CASE 6        
+            E6TargetPos = P303
+        DEFAULT
+            isCmdErr = TRUE
+        ENDSWITCH     
+    CASE 4
+        E6RelayPos  = P113
+        SWITCH   var4_Type 
+        CASE 1
+            E6TargetPos = P204
+        CASE 2
+            E6TargetPos = P224
+        CASE 3
+            E6TargetPos = P244
+        CASE 4
+            E6TargetPos = P264
+        CASE 5
+            E6TargetPos = P284
+        CASE 6        
+            E6TargetPos = P304
+        DEFAULT
+            isCmdErr = TRUE
+        ENDSWITCH     
+    CASE 5
+        E6RelayPos  = P114
+        SWITCH   var4_Type 
+        CASE 1
+            E6TargetPos = P205
+        CASE 2
+            E6TargetPos = P225
+        CASE 3
+            E6TargetPos = P245
+        CASE 4
+            E6TargetPos = P265
+        CASE 5
+            E6TargetPos = P285
+        CASE 6        
+            E6TargetPos = P305
+        DEFAULT
+            isCmdErr = TRUE
+        ENDSWITCH     
+    CASE 6        
+        E6RelayPos  = P114
+        SWITCH   var4_Type 
+        CASE 1
+            E6TargetPos = P206
+        CASE 2
+            E6TargetPos = P226
+        CASE 3
+            E6TargetPos = P246
+        CASE 4
+            E6TargetPos = P266
+        CASE 5
+            E6TargetPos = P286
+        CASE 6        
+            E6TargetPos = P306
+        DEFAULT
+            isCmdErr = TRUE
+        ENDSWITCH     
+    CASE 7
+        E6RelayPos  = P114
+        SWITCH   var4_Type 
+        CASE 1
+            E6TargetPos = P207
+        CASE 2
+            E6TargetPos = P227
+        CASE 3
+            E6TargetPos = P247
+        CASE 4
+            E6TargetPos = P267
+        CASE 5
+            E6TargetPos = P287
+        CASE 6        
+            E6TargetPos = P307
+        DEFAULT
+            isCmdErr = TRUE
+        ENDSWITCH     
+    CASE 8
+        E6RelayPos  = P114
+        SWITCH   var4_Type 
+        CASE 1
+            E6TargetPos = P208
+        CASE 2
+            E6TargetPos = P228
+        CASE 3
+            E6TargetPos = P248
+        CASE 4
+            E6TargetPos = P268
+        CASE 5
+            E6TargetPos = P288
+        CASE 6        
+            E6TargetPos = P308
+        DEFAULT
+            isCmdErr = TRUE
+        ENDSWITCH     
+    CASE 9
+        E6RelayPos  = P115
+        SWITCH   var4_Type 
+        CASE 1
+            E6TargetPos = P209
+        CASE 2
+            E6TargetPos = P229
+        CASE 3
+            E6TargetPos = P249
+        CASE 4
+            E6TargetPos = P269
+        CASE 5
+            E6TargetPos = P289
+        CASE 6    
+            E6TargetPos = P309
+        DEFAULT
+            isCmdErr = TRUE
+        ENDSWITCH     
+    CASE 10
+        E6RelayPos  = P115
+        SWITCH   var4_Type 
+        CASE 1
+            E6TargetPos = P210
+        CASE 2
+            E6TargetPos = P230
+        CASE 3
+            E6TargetPos = P250
+        CASE 4
+            E6TargetPos = P270
+        CASE 5
+            E6TargetPos = P290
+        CASE 6        
+            E6TargetPos = P310
+        DEFAULT
+            isCmdErr = TRUE
+        ENDSWITCH     
+    CASE 11
+        E6RelayPos  = P115
+        SWITCH   var4_Type 
+        CASE 1
+            E6TargetPos = P211
+        CASE 2
+            E6TargetPos = P231
+        CASE 3
+            E6TargetPos = P251
+        CASE 4
+            E6TargetPos = P271
+        CASE 5
+            E6TargetPos = P291
+        CASE 6        
+            E6TargetPos = P311
+        DEFAULT
+            isCmdErr = TRUE
+        ENDSWITCH     
+    CASE 12     
+        E6RelayPos  = P115
+        SWITCH   var4_Type 
+        CASE 1
+            E6TargetPos = P212
+        CASE 2
+            E6TargetPos = P232
+        CASE 3
+            E6TargetPos = P252
+        CASE 4
+            E6TargetPos = P272
+        CASE 5
+            E6TargetPos = P292
+        CASE 6        
+            E6TargetPos = P312
+        DEFAULT
+            isCmdErr = TRUE
+        ENDSWITCH     
+    DEFAULT
+        isCmdErr = TRUE
+    ENDSWITCH         
+
+    ;=========Start Move S1 Place=========
+    IF isCmdErr == FALSE THEN
+        ;        PTP P101 CONT Vel=20% Acc=100% TOOL[1] BASE[1]
+        LIN P111 CONT Vel=800mm/s Acc=100% TOOL[1] BASE[1]
+
+        E6MovePos = E6RelayPos
+        LIN E6MovePos CONT Vel=600mm/s Acc=100% TOOL[1] BASE[1]
+
+        E6MovePos = E6TargetPos
+        E6MovePos.X = E6MovePos.X + 30
+        E6MovePos.Y = E6MovePos.Y 
+        E6MovePos.Z = E6MovePos.Z + 80        
+        LIN E6MovePos CONT Vel=400mm/s Acc=100% TOOL[1] BASE[1]
+        ;  ====Base Move====
+        LIN_REL {X -30, Y 0, Z -50} CONT Vel=200mm/s Acc=100%
+        LIN_REL {Z -20} FINE Vel=100mm/s Acc=100%
+        LIN_REL {Z -9.5} FINE Vel=25mm/s Acc=100%
+        Gripper_Place()
+        IF isGripperAlarm == FALSE THEN
+            LIN_REL {Z 10} CONT Vel=50mm/s Acc=100% 
+            LIN_REL {Z 10} CONT Vel=200mm/s Acc=100% 
+            LIN_REL {X 30, Z 20} CONT Vel=600mm/s Acc=100% 
+
+            E6MovePos = E6RelayPos
+            LIN E6MovePos CONT Vel=600mm/s Acc=100% TOOL[1] BASE[1]
+            LIN P111 CONT Vel=800mm/s Acc=100% TOOL[1] BASE[1]
+            LIN P101 CONT Vel=800mm/s Acc=100% TOOL[1] BASE[1]
+        ENDIF    
+
+    ENDIF    
+END
+
+;=========S2_Get=========
+DEF RobotMove_S2_Get()
+    WAIT SEC 0
+    SWITCH   var4_Type 
+    CASE 1
+        E6TargetPos = P401
+    CASE 2
+        E6TargetPos = P411
+    CASE 3
+        E6TargetPos = P421
+    CASE 4
+        E6TargetPos = P431
+    CASE 5
+        E6TargetPos = P441
+    CASE 6    
+        E6TargetPos = P451
+    DEFAULT
+        isCmdErr = TRUE
+    ENDSWITCH     
+
+    ;=========Start Move S2 Get=========
+    IF isCmdErr == FALSE THEN
+        PTP P101 CONT Vel=20% Acc=100% TOOL[1] BASE[1]
+        LIN P121 CONT Vel=800mm/s Acc=100% TOOL[1] BASE[1]
+
+        E6MovePos = E6TargetPos
+        E6MovePos.Z = E6MovePos.Z + 200        
+        LIN E6MovePos CONT Vel=200mm/s Acc=100% TOOL[1] BASE[1]
+        ;  ====Base Move====
+        LIN_REL {Z -150} CONT Vel=100mm/s Acc=100%
+        LIN_REL {Z -50} FINE Vel=25mm/s Acc=100%
+        Gripper_Get()
+
+        IF isGripperAlarm == FALSE THEN
+            ;  ====Tool Move====
+            LIN_REL_Tool {Z -10} CONT Vel=50mm/s Acc=100% 
+            LIN_REL_Tool {Z -40} CONT Vel=100mm/s Acc=100% 
+
+            ;  ====Base Move====
+            LIN_REL {Z 150} CONT Vel=200mm/s Acc=100% 
+
+            LIN P121 CONT Vel=600mm/s Acc=100% TOOL[1] BASE[1]
+            ;            LIN P101 CONT Vel=600mm/s Acc=100% TOOL[1] BASE[1]
+        ENDIF     
+    ENDIF
+END
+
+;=========S2_Place=========
+DEF RobotMove_S2_Place()
+    WAIT SEC 0
+    SWITCH   var4_Type 
+    CASE 1
+        E6TargetPos = P401
+    CASE 2
+        E6TargetPos = P411
+    CASE 3
+        E6TargetPos = P421
+    CASE 4
+        E6TargetPos = P431
+    CASE 5
+        E6TargetPos = P441
+    CASE 6    
+        E6TargetPos = P451
+    DEFAULT
+        isCmdErr = TRUE
+    ENDSWITCH     
+
+    ;=========Start Move S2 Place=========
+    IF isCmdErr == FALSE THEN
+        ;        PTP P101 CONT Vel=20% Acc=100% TOOL[1] BASE[1]
+        LIN P121 CONT Vel=800mm/s Acc=100% TOOL[1] BASE[1]
+
+        E6MovePos = E6TargetPos
+        E6MovePos.Z = E6MovePos.Z + 200        
+        LIN E6MovePos CONT Vel=200mm/s Acc=100% TOOL[1] BASE[1]
+        ;  ====Base Move====
+        LIN_REL {Z -150} CONT Vel=100mm/s Acc=100%
+        LIN_REL {Z-40} FINE Vel=100mm/s Acc=100%
+        LIN_REL {Z-9.5} FINE Vel=25mm/s Acc=100%
+        Gripper_Place()
+        IF isGripperAlarm == FALSE THEN     
+            LIN_REL {Z 10} CONT Vel=50mm/s Acc=100% 
+            LIN_REL {Z 40} CONT Vel=100mm/s Acc=100% 
+            LIN_REL {Z 150} CONT Vel=200mm/s Acc=100% 
+
+            LIN P121 CONT Vel=800mm/s Acc=100% TOOL[1] BASE[1]
+            LIN P101 CONT Vel=800mm/s Acc=100% TOOL[1] BASE[1]
+        ENDIF            
+    ENDIF          
+END
+
+;=========S3_Get=========
+DEF RobotMove_S3_Get()
+    WAIT SEC 0
+    SWITCH   var2_FromStage 
+    CASE 1
+        SWITCH   var4_Type 
+        CASE 1
+            E6TargetPos = P501
+        CASE 2
+            E6TargetPos = P511
+        CASE 3
+            E6TargetPos = P521
+        CASE 4
+            E6TargetPos = P531
+        CASE 5
+            E6TargetPos = P541
+        CASE 6        
+            E6TargetPos = P551
+        DEFAULT
+            isCmdErr = TRUE
+        ENDSWITCH     
+    CASE 2
+        SWITCH   var4_Type 
+        CASE 1
+            E6TargetPos = P502
+        CASE 2
+            E6TargetPos = P512
+        CASE 3
+            E6TargetPos = P522
+        CASE 4
+            E6TargetPos = P532
+        CASE 5
+            E6TargetPos = P542
+        CASE 6        
+            E6TargetPos = P552
+        DEFAULT
+            isCmdErr = TRUE
+        ENDSWITCH     
+    CASE 3
+        SWITCH   var4_Type 
+        CASE 1
+            E6TargetPos = P503
+        CASE 2
+            E6TargetPos = P513
+        CASE 3
+            E6TargetPos = P523
+        CASE 4
+            E6TargetPos = P533
+        CASE 5
+            E6TargetPos = P543
+        CASE 6        
+            E6TargetPos = P553
+        DEFAULT
+            isCmdErr = TRUE
+        ENDSWITCH     
+    DEFAULT
+        isCmdErr = TRUE
+    ENDSWITCH     
+
+    ;=========Start Move S3 Get=========    
+    IF isCmdErr == FALSE THEN
+        PTP P101 CONT Vel=20% Acc=100% TOOL[1] BASE[1]
+        LIN P131 CONT Vel=600mm/s Acc=100% TOOL[1] BASE[1]
+
+        E6MovePos = E6TargetPos
+        E6MovePos.Z = E6MovePos.Z + 200.00
+        LIN E6MovePos CONT Vel=600mm/s Acc=100% TOOL[1] BASE[1]
+        ;  ====Base Move====
+        LIN_REL {Z -150} CONT Vel=200mm/s Acc=100%
+        LIN_REL {Z -50} FINE Vel=25mm/s Acc=100%
+        Gripper_Get()
+        IF isGripperAlarm == FALSE THEN
+            ;  ====Tool Move====
+            LIN_REL_TOOL {Z -10} CONT Vel=50mm/s Acc=100% 
+            LIN_REL_TOOL {Z -40} CONT Vel=200mm/s Acc=100% 
+
+            ;  ====Base Move====
+            LIN_REL {Z 150} CONT Vel=600mm/s Acc=100% 
+
+            LIN P131 CONT Vel=600mm/s Acc=100% TOOL[1] BASE[1]
+            ;            LIN P101 CONT Vel=600mm/s Acc=100% TOOL[1] BASE[1]
+        ENDIF    
+    ENDIF              
+END
+
+;=========S3_Place=========
+DEF RobotMove_S3_Place()
+    WAIT SEC 0
+    SWITCH   var3_ToStage 
+    CASE 1
+        SWITCH   var4_Type 
+        CASE 1
+            E6TargetPos = P501
+        CASE 2
+            E6TargetPos = P511
+        CASE 3
+            E6TargetPos = P521
+        CASE 4
+            E6TargetPos = P531
+        CASE 5
+            E6TargetPos = P541
+        CASE 6        
+            E6TargetPos = P551
+        DEFAULT
+            isCmdErr = TRUE
+        ENDSWITCH     
+    CASE 2
+        SWITCH   var4_Type 
+        CASE 1
+            E6TargetPos = P502
+        CASE 2
+            E6TargetPos = P512
+        CASE 3
+            E6TargetPos = P522
+        CASE 4
+            E6TargetPos = P532
+        CASE 5
+            E6TargetPos = P542
+        CASE 6        
+            E6TargetPos = P552
+        DEFAULT
+            isCmdErr = TRUE
+        ENDSWITCH     
+    CASE 3
+        SWITCH   var4_Type 
+        CASE 1
+            E6TargetPos = P503
+        CASE 2
+            E6TargetPos = P513
+        CASE 3
+            E6TargetPos = P523
+        CASE 4
+            E6TargetPos = P533
+        CASE 5
+            E6TargetPos = P543
+        CASE 6        
+            E6TargetPos = P553
+        DEFAULT
+            isCmdErr = TRUE
+        ENDSWITCH     
+    DEFAULT
+        isCmdErr = TRUE
+    ENDSWITCH     
+
+    ;=========Start Move S3 Place=========
+    IF isCmdErr == FALSE THEN
+        ;        PTP P101 CONT Vel=20% Acc=100% TOOL[1] BASE[1]
+        LIN P131 CONT Vel=800mm/s Acc=100% TOOL[1] BASE[1]
+
+        E6MovePos = E6TargetPos
+        E6MovePos.Z = E6MovePos.Z + 200        
+        LIN E6MovePos CONT Vel=600mm/s Acc=100% TOOL[1] BASE[1]
+        ;  ====Base Move====
+        LIN_REL {Z -150} CONT Vel=200mm/s Acc=100%
+        LIN_REL {Z-40} FINE Vel=100mm/s Acc=100%
+        LIN_REL {Z-9.5} FINE Vel=25mm/s Acc=100%
+        Gripper_Place()
+        IF isGripperAlarm == FALSE THEN
+            ;  ====Base Move====
+            LIN_REL {Z 10} CONT Vel=50mm/s Acc=100% 
+            LIN_REL {Z 40} CONT Vel=200mm/s Acc=100% 
+            LIN_REL {Z 150} CONT Vel=600mm/s Acc=100% 
+
+            LIN P131 CONT Vel=800mm/s Acc=100% TOOL[1] BASE[1]
+            LIN P101 CONT Vel=800mm/s Acc=100% TOOL[1] BASE[1]
+        ENDIF            
+    ENDIF    
+END
+
+;=========S4_Get=========
+DEF RobotMove_S4_Get()
+    WAIT SEC 0
+    SWITCH   var2_FromStage 
+    CASE 1
+        E6RelayPos =P143
+        SWITCH   var4_Type 
+        CASE 1
+            E6TargetPos = P601
+        CASE 2
+            E6TargetPos = P611
+        CASE 3
+            E6TargetPos = P621
+        CASE 4
+            E6TargetPos = P631
+        CASE 5
+            E6TargetPos = P641
+        CASE 6        
+            E6TargetPos = P651
+        DEFAULT
+            isCmdErr = TRUE
+        ENDSWITCH     
+    CASE 2
+        E6RelayPos =P144
+        SWITCH   var4_Type 
+        CASE 1
+            E6TargetPos = P602
+        CASE 2
+            E6TargetPos = P612
+        CASE 3
+            E6TargetPos = P622
+        CASE 4
+            E6TargetPos = P632
+        CASE 5
+            E6TargetPos = P642
+        CASE 6        
+            E6TargetPos = P652
+        DEFAULT
+            isCmdErr = TRUE
+        ENDSWITCH     
+    CASE 3
+        E6RelayPos =P145
+        SWITCH   var4_Type 
+        CASE 1
+            E6TargetPos = P603
+        CASE 2
+            E6TargetPos = P613
+        CASE 3
+            E6TargetPos = P623
+        CASE 4
+            E6TargetPos = P633
+        CASE 5
+            E6TargetPos = P643
+        CASE 6        
+            E6TargetPos = P653
+        DEFAULT
+            isCmdErr = TRUE
+        ENDSWITCH     
+    DEFAULT
+        isCmdErr = TRUE
+    ENDSWITCH     	  	  
+
+    ;=========Start Move S4 Get=========
+    IF isCmdErr == FALSE THEN
+        PTP P101 CONT Vel=20% Acc=100% TOOL[1] BASE[1]
+        LIN P141 CONT Vel=800mm/s Acc=100% TOOL[1] BASE[1]
+
+        E6MovePos = E6RelayPos
+        LIN E6MovePos CONT Vel=600mm/s Acc=100% TOOL[1] BASE[1]
+
+        E6MovePos = E6TargetPos
+        E6MovePos.X = E6MovePos.X - 100
+        E6MovePos.Y = E6MovePos.Y + 30
+        E6MovePos.Z = E6MovePos.Z + 80        
+        LIN E6MovePos CONT Vel=600mm/s Acc=100% TOOL[1] BASE[1]
+
+        ;  ====Base Move====
+        LIN_REL {X 100, Y -30, Z -50} CONT Vel=200mm/s Acc=100%
+        LIN_REL {Z -30} FINE Vel=25mm/s Acc=100%
+        Gripper_Get()
+
+        IF isGripperAlarm == FALSE THEN
+            ;  ====Tool Move====
+            LIN_REL_TOOL {Z -10} CONT Vel=50mm/s Acc=100% 
+            LIN_REL_TOOL {Z -30} CONT Vel=200mm/s Acc=100%
+            WAIT SEC 1; Check get ok
+
+            ;  ====Base Move====
+            LIN_REL {X -100, Y 30, Z 50} CONT Vel=600mm/s Acc=100%
+
+            E6MovePos = E6RelayPos
+            LIN E6MovePos CONT Vel=600mm/s Acc=100% TOOL[1] BASE[1]		             
+            LIN P141 CONT Vel=600mm/s Acc=100% TOOL[1] BASE[1]
+            LIN P101 CONT Vel=600mm/s Acc=100% TOOL[1] BASE[1]
+        ENDIF            
+    ENDIF  
+END
+
+;=========S4_Place=========
+DEF RobotMove_S4_Place()
+    WAIT SEC 0
+    SWITCH   var3_ToStage 
+    CASE 1
+        E6RelayPos =P143
+        SWITCH   var4_Type 
+        CASE 1
+            E6TargetPos = P601
+        CASE 2
+            E6TargetPos = P611
+        CASE 3
+            E6TargetPos = P621
+        CASE 4
+            E6TargetPos = P631
+        CASE 5
+            E6TargetPos = P641
+        CASE 6        
+            E6TargetPos = P651
+        DEFAULT
+            isCmdErr = TRUE
+        ENDSWITCH     
+    CASE 2
+        E6RelayPos =P144
+        SWITCH   var4_Type 
+        CASE 1
+            E6TargetPos = P602
+        CASE 2
+            E6TargetPos = P612
+        CASE 3
+            E6TargetPos = P622
+        CASE 4
+            E6TargetPos = P632
+        CASE 5
+            E6TargetPos = P642
+        CASE 6        
+            E6TargetPos = P652
+        DEFAULT
+            isCmdErr = TRUE
+        ENDSWITCH     
+    CASE 3
+        E6RelayPos =P145
+        SWITCH   var4_Type 
+        CASE 1
+            E6TargetPos = P603
+        CASE 2
+            E6TargetPos = P613
+        CASE 3
+            E6TargetPos = P623
+        CASE 4
+            E6TargetPos = P633
+        CASE 5
+            E6TargetPos = P643
+        CASE 6        
+            E6TargetPos = P653
+        DEFAULT
+            isCmdErr = TRUE
+        ENDSWITCH     
+    DEFAULT
+        isCmdErr = TRUE
+    ENDSWITCH     	  	  
+
+    ;=========Start Move S4 Place=========
+    IF isCmdErr == FALSE THEN
+        ;PTP P101 CONT Vel=20% Acc=100% TOOL[1] BASE[1]
+        LIN P141 CONT Vel=800mm/s Acc=100% TOOL[1] BASE[1]
+
+        E6MovePos = E6RelayPos
+        LIN E6MovePos CONT Vel=600mm/s Acc=100% TOOL[1] BASE[1]
+
+        E6MovePos = E6TargetPos
+        E6MovePos.X = E6MovePos.X - 100
+        E6MovePos.Y = E6MovePos.Y + 30
+        E6MovePos.Z = E6MovePos.Z + 80        
+        LIN E6MovePos CONT Vel=600mm/s Acc=100% TOOL[1] BASE[1]			   		 	  
+        ;  ====Base Move====
+        LIN_REL {X 100, Y -30, Z -40} CONT Vel=200mm/s Acc=100%
+        LIN_REL {Z -30} FINE Vel=100mm/s Acc=100%
+        LIN_REL {Z -9.5} FINE Vel=25mm/s Acc=100%
+        Gripper_Place()
+        IF isGripperAlarm == FALSE THEN
+            ;  ====Tool Move====
+            LIN_REL {Z 10} CONT Vel=50mm/s Acc=100% 
+            LIN_REL {Z 20} CONT Vel=200mm/s Acc=100% 
+            LIN_REL {X -100, Y 30, Z 50} CONT Vel=600mm/s Acc=100%
+
+            E6MovePos = E6RelayPos
+            LIN E6MovePos CONT Vel=600mm/s Acc=100% TOOL[1] BASE[1]
+
+            LIN P141 CONT Vel=800mm/s Acc=100% TOOL[1] BASE[1]
+            LIN P101 CONT Vel=800mm/s Acc=100% TOOL[1] BASE[1] 
+        ENDIF
+    ENDIF  	
+END
+
+;=========S3_Temperature_Go=========
+DEF RobotMove_S3_Temperature_Go()
+    WAIT SEC 0
+    isTemperatureNow = TRUE
+    SWITCH   var2_FromStage 
+    CASE 1
+        SWITCH   var4_Type 
+        CASE 1
+            E6TargetPos = P701
+        CASE 2
+            E6TargetPos = P711
+        CASE 3
+            E6TargetPos = P721
+        CASE 4
+            E6TargetPos = P731
+        CASE 5
+            E6TargetPos = P741
+        CASE 6        
+            E6TargetPos = P751
+        DEFAULT
+            isCmdErr = TRUE
+        ENDSWITCH     
+    CASE 2
+        SWITCH   var4_Type 
+        CASE 1
+            E6TargetPos = P702
+        CASE 2
+            E6TargetPos = P712
+        CASE 3
+            E6TargetPos = P722
+        CASE 4
+            E6TargetPos = P732
+        CASE 5
+            E6TargetPos = P742
+        CASE 6        
+            E6TargetPos = P752
+        DEFAULT
+            isCmdErr = TRUE
+        ENDSWITCH     
+    CASE 3
+        SWITCH   var4_Type 
+        CASE 1
+            E6TargetPos = P703
+        CASE 2
+            E6TargetPos = P713
+        CASE 3
+            E6TargetPos = P723
+        CASE 4
+            E6TargetPos = P733
+        CASE 5
+            E6TargetPos = P743
+        CASE 6        
+            E6TargetPos = P753
+        DEFAULT
+            isCmdErr = TRUE
+        ENDSWITCH     
+    DEFAULT
+        isCmdErr = TRUE
+    ENDSWITCH     
+
+    ;=========Start Move S3Temp GO=========    
+    IF isCmdErr == FALSE THEN
+        PTP P101 CONT Vel=20% Acc=100% TOOL[1] BASE[1]
+        LIN P151 CONT Vel=800mm/s Acc=100% TOOL[1] BASE[1]
+
+        E6MovePos = E6TargetPos
+        E6MovePos.Z = E6MovePos.Z + 200
+
+        LIN E6MovePos CONT Vel=600mm/s Acc=100% TOOL[1] BASE[1]
+        LIN_REL {Z -150} CONT Vel=200mm/s Acc=100%
+        LIN_REL {Z-40} FINE Vel=100mm/s Acc=100%
+        LIN_REL {Z-10} FINE Vel=25mm/s Acc=100%
+    ENDIF  
+END
+
+;=========S3_Temperature_Back=========
+DEF RobotMove_S3_Temperature_Back()
+    WAIT SEC 0
+    SWITCH   var3_ToStage 
+    CASE 1
+        SWITCH   var4_Type 
+        CASE 1
+            E6TargetPos = P701
+        CASE 2
+            E6TargetPos = P711
+        CASE 3
+            E6TargetPos = P721
+        CASE 4
+            E6TargetPos = P731
+        CASE 5
+            E6TargetPos = P741
+        CASE 6        
+            E6TargetPos = P751
+        DEFAULT
+            isCmdErr = TRUE
+        ENDSWITCH     
+    CASE 2
+        SWITCH   var4_Type 
+        CASE 1
+            E6TargetPos = P702
+        CASE 2
+            E6TargetPos = P712
+        CASE 3
+            E6TargetPos = P722
+        CASE 4
+            E6TargetPos = P732
+        CASE 5
+            E6TargetPos = P742
+        CASE 6        
+            E6TargetPos = P752
+        DEFAULT
+            isCmdErr = TRUE
+        ENDSWITCH     
+    CASE 3
+        SWITCH   var4_Type 
+        CASE 1
+            E6TargetPos = P703
+        CASE 2
+            E6TargetPos = P713
+        CASE 3
+            E6TargetPos = P723
+        CASE 4
+            E6TargetPos = P733
+        CASE 5
+            E6TargetPos = P743
+        CASE 6        
+            E6TargetPos = P753
+        DEFAULT
+            isCmdErr = TRUE
+        ENDSWITCH     
+    DEFAULT
+        isCmdErr = TRUE
+    ENDSWITCH    
+    ;=========Start Move S3Temp Back=========    
+    IF isCmdErr == FALSE THEN
+        ;  ====Tool Move====
+        LIN_REL_TOOL {Z -10} CONT Vel=50mm/s Acc=100% 
+        LIN_REL_TOOL {Z -40} CONT Vel=200mm/s Acc=100% 
+
+        ;  ====Base Move====
+        LIN_REL {Z 150} CONT Vel=600mm/s Acc=100% 
+        LIN P151 CONT Vel=800mm/s Acc=100% TOOL[1] BASE[1]
+        LIN P101 CONT Vel=800mm/s Acc=100% TOOL[1] BASE[1] 
+        isTemperatureNow = FALSE
+    ENDIF
+END
+
+;=========
+DEF Gripper_Get()
+    IF isGripperAlarm == FALSE AND intGipperByPass == 0 THEN
+        WAIT SEC 0        
+        $VO[1] = TRUE
+        
+        IF intGetPressureByPass == 0 THEN
+            WAIT SEC 0.1
+        ELSE
+            WAIT SEC 0.5
+        ENDIF
+        
+        IF intGetSensorCheckByPass == 0 THEN
+            $C[1] = 0
+            WHILE $RI[1] == TRUE AND $C[1] < 100 
+                WAIT SEC 0.1
+                $C[1]=$C[1] + 1
+            ENDWHILE
+
+            IF $RI[1] == FALSE AND $C[1] <= 100 THEN
+                WAIT SEC 0
+            ELSE
+                isGripperAlarm = TRUE
+            ENDIF
+        ELSE
+            WAIT SEC 0.1
+        ENDIF   		
+
+        IF GetPressureOk()== TRUE THEN
+            WAIT SEC 0
+        ELSE
+            isGripperAlarm = TRUE
+        ENDIF
+    ELSE
+        WAIT SEC 1
+    ENDIF
+END
+
+;==========
+DEF Gripper_Place()
+    IF isGripperAlarm == FALSE  AND intGipperByPass == 0 THEN
+        WAIT SEC 0        
+        $VO[1] = FALSE
+        WAIT SEC 0.5
+        $C[1] = 0
+        WHILE $RI[1] == FALSE AND $C[1] < 100 
+            WAIT SEC 0.5 
+            $C[1]=$C[1] + 1
+        ENDWHILE
+
+        IF $RI[1] == TRUE AND $C[1] <= 100 THEN
+            WAIT SEC 0
+        ELSE
+            isGripperAlarm = TRUE
+        ENDIF
+
+        ;        IF PlacePressureOk()== TRUE THEN
+        ;            WAIT SEC 0
+        ;        ELSE
+        ;            isGripperAlarm = TRUE
+        ;        ENDIF
+    ELSE
+        WAIT SEC 1
+    ENDIF
+END
+
+;==========
+DEFFCT BOOL GetPressureOk()
+    WAIT SEC 0
+    BOOL isReValue
+    IF intGetPressureByPass == 0 THEN
+        var2_GripperGetOk = 0
+        WAIT SEC 0
+        CWRITE(HANDLE, 301,2)	
+        $C[6] = 0
+
+        WHILE var2_GripperGetOk == 0 AND $C[6] < 200
+            GetCommand()        
+            WAIT SEC 0.5
+            $C[6]=$C[6] + 1
+        ENDWHILE     
+
+        IF var2_GripperGetOk == 0 AND $C[6] >= 20 THEN
+            isReValue = FALSE
+        ELSE
+
+            IF var2_GripperGetOk  == 1 THEN
+                isReValue = TRUE          
+            ELSE
+                isReValue = FALSE
+            ENDIF
+        ENDIF
+    ELSE
+        isReValue = TRUE          
+    ENDIF
+    RETURN isReValue
+ENDFCT
+
+;==========
+DEFFCT BOOL PlacePressureOk()
+    WAIT SEC 0
+    BOOL isReValue
+    IF intGetPressureByPass == 0 THEN
+        var2_GripperGetOk = 0
+        WAIT SEC 0
+        CWRITE(HANDLE, 301,2)	        
+        $C[6] = 0
+        WHILE var2_GripperGetOk == 0 AND $C[6] < 20 
+            GetCommand()
+            WAIT SEC 0.5 
+            $C[6]=$C[6] + 1
+        ENDWHILE     
+
+        WAIT SEC 0
+        IF var2_GripperGetOk == 0 AND $C[6] >= 20 THEN
+            isReValue = FALSE
+        ELSE
+            IF var2_GripperGetOk  != 1 THEN
+                isReValue = TRUE          
+            ELSE
+                isReValue = FALSE
+            ENDIF
+        ENDIF
+    ELSE
+        isReValue = TRUE          
+    ENDIF
+    RETURN isReValue
+ENDFCT
+
+;=========GoHome=========
+DEF GoHome()
+    WAIT SEC 0
+    Robot_Move_ON()
+    LIN_REL {X 0.5} CONT Vel=400mm/s Acc=100%
+    LIN_REL {Y 0.5} CONT Vel=400mm/s Acc=100%
+    LIN_REL {Z 0.5} CONT Vel=400mm/s Acc=100%
+    LIN_REL {A 0.1} CONT Vel=400mm/s Acc=100%
+    LIN_REL {B 0.1} CONT Vel=400mm/s Acc=100%
+    LIN_REL {C 0.1} CONT Vel=400mm/s Acc=100%
+    LIN P101 FINE Vel=400mm/s Acc=100% TOOL[1] BASE[1]
+    Robot_Move_OFF()
+
+END
+
+;=========CounterReset=========
+DEF CounterReset()
+    WAIT SEC 0
+    $C[1] = 0 
+    $C[2] = 0
+    $C[3] = 0
+    $C[4] = 0
+    $C[5] = 0
+    $C[6] = 0
+    $C[7] = 0
+    $C[8] = 0
+    $C[9] = 0
+    $C[10] = 0
+END
+
+;=========CounterReset=========
+DEF TimerReset()
+    WAIT SEC 0
+    $T[1] = 0
+    $T[2] = 0
+    $T[3] = 0
+    $T[4] = 0
+    $T[5] = 0
+    $T[6] = 0
+    $T[7] = 0
+    $T[8] = 0
+    $T[9] = 0
+    $T[10] = 0
+END
+
+;========CommandReset=========
+DEF CommandReset()
+    WAIT SEC 0
+    var1_Cmd = 0
+    var2_FromStage = 0
+    var3_ToStage = 0
+    var4_Type = 0
+    var2_GripperGetOk = 0
+END
+
+
+;========CheckSameLastTimeCommand==========
+DEF CheckSameLastTimeCommand()
+    WAIT SEC 0  
+    IF var1_Cmd == 501 THEN
+    ELSE	  
+        IF var1_Cmd == var1_Cmd_Temp AND var2_FromStage == var2_FromStage_Temp AND var3_ToStage == var3_ToStage_Temp AND var4_Type == var4_Type_Temp THEN
+            WAIT SEC 1
+            USER_ALARM[7]
+        ELSE	  
+            var1_Cmd_Temp = var1_Cmd 
+            var2_FromStage_Temp =  var2_FromStage
+            var3_ToStage_Temp=  var3_ToStage
+            var4_Type_Temp =  var4_Type
+        ENDIF
+    ENDIF     
+END
+
+;=========Check_Robot_POS_C1=========
+DEFFCT BOOL Check_Robot_POS_C1()
+    WAIT SEC 0
+    E6CurrentPos = GETPOINT
+    IF  E6CurrentPos.X > P101.X+10 OR  E6CurrentPos.X < P101.X-10 OR E6CurrentPos.Y > P101.Y+10 OR E6CurrentPos.Y < P101.Y-10  OR E6CurrentPos.Z > P101.Z+15 OR E6CurrentPos.Z < P101.Z-15 THEN
+        RETURN FALSE
+    ELSE	  
+        RETURN TRUE 
+    ENDIF
+ENDFCT
+
+;=========Check_Command=========
+DEFFCT BOOL Check_Command()
+    WAIT SEC 0
+
+    ;====CheckSameLastTimeCommand====
+    CheckSameLastTimeCommand()
+
+    ;====Type====
+    IF  var4_Type == 6 OR var4_Type == 5 OR var4_Type == 4 OR var4_Type == 3 OR var4_Type == 2 OR var4_Type == 1THEN
+
+    ELSE	  
+        RETURN FALSE 
+    ENDIF
+
+    ;====Command===
+    ;====不在溫度量測區====
+    IF isTemperatureNow == FALSE THEN        
+        SWITCH var1_Cmd
+        CASE 101
+            IF  var2_FromStage < 13 AND var2_FromStage > 0  THEN
+            ELSE	  
+                RETURN FALSE 
+            ENDIF
+            IF  var3_ToStage ==1  THEN
+            ELSE	  
+                RETURN FALSE 
+            ENDIF
+        CASE 105         
+            IF  var2_FromStage == 1  THEN
+            ELSE	  
+                RETURN FALSE 
+            ENDIF
+            IF  var3_ToStage < 4 OR  var3_ToStage > 0 THEN
+            ELSE	  
+                RETURN FALSE 
+            ENDIF         
+        CASE 107
+            IF  var2_FromStage < 4 AND var2_FromStage > 0 THEN
+            ELSE	  
+                RETURN FALSE 
+            ENDIF
+            IF  var3_ToStage < 2 OR  var3_ToStage > 0 THEN
+            ELSE	  
+                RETURN FALSE 
+            ENDIF 	
+        CASE 109
+            IF  var2_FromStage < 3 AND var2_FromStage > 0 THEN
+            ELSE	  
+                RETURN FALSE 
+            ENDIF
+            IF  var3_ToStage < 13 OR  var3_ToStage > 0 THEN
+            ELSE	  
+                RETURN FALSE 
+            ENDIF 
+        CASE 201       
+            IF  var2_FromStage < 4 AND var2_FromStage > 0 THEN
+            ELSE	  
+                RETURN FALSE 
+            ENDIF        
+        CASE 203  
+            $C[4]  = 78
+            RETURN FALSE 
+        CASE 501   
+        DEFAULT      
+            RETURN FALSE
+        ENDSWITCH           
+    ELSE
+        ;====在溫度量測區====
+        SWITCH var1_Cmd            
+        CASE 203  
+
+        CASE 501   
+
+        DEFAULT      
+            RETURN FALSE
+        ENDSWITCH   
+    ENDIF
+    RETURN TRUE
+    WAIT SEC 0
+ENDFCT
+
+;=========AutoSpeedUp=========
+DEF AutoSpeedUp()   
+    WAIT SEC 0  	   
+    IF intAutoSpeedUpByPass == 0 AND isExecute == FALSE THEN        
+        IF intCmdCount > 0 THEN
+            SET_OVERRIDE_SPEED 87            
+            isExecute = TRUE
+        ELSE	  
+            intCmdCount = intCmdCount+1            
+        ENDIF     
+    ELSE
+
+    ENDIF        
+    
+END
+
+;=========S1_PortCheck=========
+DEFFCT BOOL S1_Check(intPort:IN)
+    WAIT SEC 0
+    REAL intPort
+    BOOL isReValue
+
+    SWITCH intPort
+    CASE 1
+        IF intPS_S1_1 == 1 THEN
+            isReValue = TRUE
+        ELSE  
+            isReValue = FALSE
+        ENDIF
+    CASE 2
+        IF intPS_S1_2 == 1 THEN
+            isReValue = TRUE
+        ELSE  
+            isReValue = FALSE
+        ENDIF
+    CASE 3
+        IF intPS_S1_3 == 1 THEN
+            isReValue = TRUE
+        ELSE  
+            isReValue = FALSE
+        ENDIF
+    CASE 4
+        IF intPS_S1_4 == 1 THEN
+            isReValue = TRUE
+        ELSE  
+            isReValue = FALSE
+        ENDIF
+    CASE 5
+        IF intPS_S1_5 == 1 THEN
+            isReValue = TRUE
+        ELSE  
+            isReValue = FALSE
+        ENDIF
+    CASE 6
+        IF intPS_S1_6 == 1 THEN
+            isReValue = TRUE
+        ELSE  
+            isReValue = FALSE
+        ENDIF
+    CASE 7
+        IF intPS_S1_7 == 1 THEN
+            isReValue = TRUE
+        ELSE  
+            isReValue = FALSE
+        ENDIF
+    CASE 8
+        IF intPS_S1_8 == 1 THEN
+            isReValue = TRUE
+        ELSE  
+            isReValue = FALSE
+        ENDIF
+    CASE 9
+        IF intPS_S1_9 == 1 THEN
+            isReValue = TRUE
+        ELSE  
+            isReValue = FALSE
+        ENDIF
+    CASE 10
+        IF intPS_S1_10 == 1 THEN
+            isReValue = TRUE
+        ELSE  
+            isReValue = FALSE
+        ENDIF
+    CASE 11
+        IF intPS_S1_11 == 1 THEN
+            isReValue = TRUE
+        ELSE  
+            isReValue = FALSE
+        ENDIF
+    CASE 12
+        IF intPS_S1_12 == 1 THEN
+            isReValue = TRUE
+        ELSE  
+            isReValue = FALSE
+        ENDIF
+    DEFAULT      
+        isReValue = TRUE
+    ENDSWITCH   	
+    RETURN isReValue
+    WAIT SEC 0
+ENDFCT
+
+;=========S2_PortCheck=========
+DEFFCT BOOL S2_Check(intPort:IN)
+    WAIT SEC 0
+    REAL intPort
+    BOOL isReValue
+
+    SWITCH intPort
+    CASE 1
+        IF intPS_S2_1 == 1 THEN
+            isReValue = TRUE
+        ELSE  
+            isReValue = FALSE
+        ENDIF    
+    DEFAULT      
+        isReValue = TRUE
+    ENDSWITCH   	
+    RETURN isReValue
+    WAIT SEC 0
+ENDFCT
+
+;=========S3_PortCheck=========
+DEFFCT BOOL S3_Check(intPort:IN)
+    WAIT SEC 0
+    REAL intPort
+    BOOL isReValue
+
+    SWITCH intPort
+    CASE 1
+        IF intPS_S3_1 == 1 THEN
+            isReValue = TRUE
+        ELSE  
+            isReValue = FALSE
+        ENDIF
+    CASE 2
+        IF intPS_S3_2 == 1 THEN
+            isReValue = TRUE
+        ELSE  
+            isReValue = FALSE
+        ENDIF
+    CASE 3
+        IF intPS_S3_3 == 1 THEN
+            isReValue = TRUE
+        ELSE  
+            isReValue = FALSE
+        ENDIF   
+    DEFAULT      
+        isReValue = TRUE
+    ENDSWITCH   	
+    RETURN isReValue
+    WAIT SEC 0
+ENDFCT
+
+;=========S4_PortCheck=========
+DEFFCT BOOL S4_Check(intPort:IN)
+    WAIT SEC 0
+    REAL intPort
+    BOOL isReValue
+
+    SWITCH intPort
+    CASE 1
+        IF intPS_S4_1 == 1 THEN
+            isReValue = TRUE
+        ELSE  
+            isReValue = FALSE
+        ENDIF
+    CASE 2
+        IF intPS_S4_2 == 1 THEN
+            isReValue = TRUE
+        ELSE  
+            isReValue = FALSE
+        ENDIF  
+    DEFAULT      
+        isReValue = TRUE
+    ENDSWITCH   	
+    RETURN isReValue
+    WAIT SEC 0
+ENDFCT
+
+;=========S1_PortSet=========
+DEFFCT BOOL S1_Set(intPort:IN,isAdd:IN)
+    WAIT SEC 0
+    REAL intPort
+    BOOL isAdd 
+    BOOL isReValue =TRUE
+
+    SWITCH intPort
+    CASE 1
+        IF isAdd == TRUE THEN
+            intPS_S1_1 = 1
+        ELSE  
+            intPS_S1_1 = 0 
+        ENDIF
+    CASE 2
+        IF isAdd == TRUE THEN
+            intPS_S1_2 = 1
+        ELSE  
+            intPS_S1_2 = 0 
+        ENDIF
+    CASE 3
+        IF isAdd == TRUE THEN
+            intPS_S1_3 = 1
+        ELSE  
+            intPS_S1_3 = 0 
+        ENDIF
+    CASE 4
+        IF isAdd == TRUE THEN
+            intPS_S1_4 = 1
+        ELSE  
+            intPS_S1_4 = 0 
+        ENDIF
+    CASE 5
+        IF isAdd == TRUE THEN
+            intPS_S1_5 = 1
+        ELSE  
+            intPS_S1_5 = 0 
+        ENDIF
+    CASE 6
+        IF isAdd == TRUE THEN
+            intPS_S1_6 = 1
+        ELSE  
+            intPS_S1_6 = 0 
+        ENDIF
+    CASE 7
+        IF isAdd == TRUE THEN
+            intPS_S1_7 = 1
+        ELSE  
+            intPS_S1_7 = 0 
+        ENDIF
+    CASE 8
+        IF isAdd == TRUE THEN
+            intPS_S1_8 = 1
+        ELSE  
+            intPS_S1_8 = 0 
+        ENDIF
+    CASE 9
+        IF isAdd == TRUE THEN
+            intPS_S1_9 = 1
+        ELSE  
+            intPS_S1_9 = 0 
+        ENDIF
+    CASE 10
+        IF isAdd == TRUE THEN
+            intPS_S1_10 = 1
+        ELSE  
+            intPS_S1_10 = 0 
+        ENDIF
+    CASE 11
+        IF isAdd == TRUE THEN
+            intPS_S1_11 = 1
+        ELSE  
+            intPS_S1_11 = 0 
+        ENDIF
+    CASE 12
+        IF isAdd == TRUE THEN
+            intPS_S1_12 = 1
+        ELSE  
+            intPS_S1_12 = 0 
+        ENDIF
+    DEFAULT      
+    ENDSWITCH   	
+
+    RETURN isReValue
+    WAIT SEC 0
+ENDFCT
+
+;=========S2_PortSet=========
+DEFFCT BOOL S2_Set(intPort:IN,isAdd:IN)
+    WAIT SEC 0
+    REAL intPort
+    BOOL isAdd 
+    BOOL isReValue =TRUE
+
+    SWITCH intPort
+    CASE 1
+        IF isAdd == TRUE THEN
+            intPS_S2_1 = 1
+        ELSE  
+            intPS_S2_1 = 0 
+        ENDIF    
+    DEFAULT      
+    ENDSWITCH   	
+
+    RETURN isReValue
+    WAIT SEC 0
+ENDFCT
+
+;=========S3_PortSet=========
+DEFFCT BOOL S3_Set(intPort:IN,isAdd:IN)
+    WAIT SEC 0
+    REAL intPort
+    BOOL isAdd 
+    BOOL isReValue =TRUE
+
+    SWITCH intPort
+    CASE 1
+        IF isAdd == TRUE THEN
+            intPS_S3_1 = 1
+        ELSE  
+            intPS_S3_1 = 0 
+        ENDIF
+    CASE 2
+        IF isAdd == TRUE THEN
+            intPS_S3_2 = 1
+        ELSE  
+            intPS_S3_2 = 0 
+        ENDIF
+    CASE 3
+        IF isAdd == TRUE THEN
+            intPS_S3_3 = 1
+        ELSE  
+            intPS_S3_3 = 0 
+        ENDIF    
+    DEFAULT      
+    ENDSWITCH   	
+
+    RETURN isReValue
+    WAIT SEC 0
+ENDFCT
+
+;=========S4_PortSet=========
+DEFFCT BOOL S4_Set(intPort:IN,isAdd:IN)
+    WAIT SEC 0
+    REAL intPort
+    BOOL isAdd 
+    BOOL isReValue =TRUE
+
+    SWITCH intPort
+    CASE 1
+        IF isAdd == TRUE THEN
+            intPS_S4_1 = 1
+        ELSE  
+            intPS_S4_1 = 0 
+        ENDIF
+    CASE 2
+        IF isAdd == TRUE THEN
+            intPS_S4_2 = 1
+        ELSE  
+            intPS_S4_2 = 0 
+        ENDIF   
+    DEFAULT      
+    ENDSWITCH   	
+
+    RETURN isReValue
+    WAIT SEC 0
+ENDFCT
+
+;=========Check_Gripper Not Get=========
+DEFFCT BOOL Check_Gripper_Not_Get()
+    WAIT SEC 0
+    IF $RI[1] == FALSE THEN
+        RETURN FALSE
+    ELSE  
+        RETURN TRUE 
+    ENDIF
+    WAIT SEC 0
+ENDFCT
+
+;=========Robot_Move_ON()=========
+DEF Robot_Move_On()
+    WAIT SEC 0 
+    ;DO[x]: MOVE ON
+    $DO[1] = TRUE
+    $DO[2] = FALSE
+    WAIT SEC 0 
+END
+
+;=========Robot_Move_Off()=========
+DEF Robot_Move_Off()
+    WAIT SEC 0 
+    ;DO[x]: MOVE OFF
+    $DO[1] = FALSE
+    $DO[2] = TRUE
+    WAIT SEC 0 
+END
